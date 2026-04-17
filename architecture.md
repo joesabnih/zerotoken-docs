@@ -1,22 +1,33 @@
-# ZeroToken Architecture: The Proxy Layer
+# System Architecture: ZeroToken Proxy Layer
 
-ZeroToken operates as a middleware infrastructure layer between your autonomous agent and the LLM provider. It is built to ensure consistent OPEX regardless of agent loop frequency.
+ZeroToken is engineered to act as a transparent, high-throughput middleware between autonomous AI agents and Large Language Model (LLM) APIs. 
 
-## The Stack
-- **Edge Runtime:** Next.js API Routes deployed on Vercel for ultra-low latency.
-- **State & Telemetry:** Supabase for tracking request origins and enforcing flat-rate limits.
-- **Core Engine:** Custom Auto-Truncator Algorithm.
+By offloading context management from the client to the edge infrastructure, we eliminate variable token billing and prevent context window crashes.
 
-## The Payload Pipeline
+## Infrastructure Stack
+* **Proxy Engine:** Next.js API Routes (deployed on Vercel Edge Network for global low latency).
+* **State & Telemetry:** Supabase (PostgreSQL) for API key validation, rate limiting, and flat-rate billing enforcement.
+* **Core Logic:** ZeroToken Auto-Truncator Algorithm.
 
-1. **Interception:** The agent sends a standard OpenAI payload to `api.zerotoken.dev`.
-2. **Analysis:** The engine parses the `messages` array, measuring the token weight of the `system` prompt, tool descriptions, and historical context.
-3. **Deduplication:** Frameworks often accidentally inject the `IDENTITY.md` multiple times in a retry loop. The proxy strips duplicate system headers.
-4. **Smart Truncation:** If the payload approaches the model's context limit, the proxy aggressively prunes the middle of the conversation history (the dead weight) while strictly preserving:
-   - The primary system instructions.
-   - The most recent user input.
-   - Active tool call JSONs.
-5. **Forwarding:** The optimized payload is sent to the target LLM. 
-6. **Response:** The LLM's response is streamed back to the agent with zero structural changes.
+## Request Lifecycle
 
-By handling this server-side, the client-side agent framework remains lightweight and never crashes from `400 Bad Request: Context Window Exceeded`.
+```text
+[ Autonomous Agent ] 
+        |
+        | (1) Standard OpenAI Payload (Contains heavy IDENTITY.md & History)
+        v
+[ api.zerotoken.dev ] ---> (2) Supabase: Validate API Key & Active Subscription
+        |
+        | (3) Interception & Parsing: Analyze the `messages` array
+        | (4) Deduplication: Strip duplicate system headers injected by retry loops
+        | (5) Smart Truncation: Prune dead weight (middle history) if payload > limit
+        v
+[ Optimized Payload ] 
+        |
+        | (6) Forward to LLM Provider (OpenAI, Groq, etc.)
+        v
+[ Target LLM API ]
+        |
+        | (7) Stream completion response
+        v
+[ Autonomous Agent ] (Receives response seamlessly)
